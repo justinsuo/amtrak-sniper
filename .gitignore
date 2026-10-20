@@ -1,0 +1,7 @@
+# local state & secrets — never commit these
+config.yaml
+data/
+__pycache__/
+*.pyc
+.venv/
+venv/

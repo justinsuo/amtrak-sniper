@@ -1,0 +1,15 @@
+# amtrak-sniper config — copy to config.yaml and edit (or use the web UI Setup page)
+route: { from_code: WAS, to_code: BOS }   # Amtrak station codes
+dates: ["2026-11-20", "2026-11-21"]       # any train on these dates qualifies
+max_price_usd: 59.99                      # your bid: alert/buy at or below this
+seat_class: coach
+min_seats_available: 1
+poll_median_seconds: 180
+jitter_fraction: 0.3
+daily_request_cap: 400
+notify:
+  channel: telegram
+  bot_token: ""   # from @BotFather (/newbot)
+  chat_id: ""     # your numeric chat id — press Start on your bot, then see README §3
+auto_checkout: false   # keep false; enable only after weeks of clean monitoring
+proxy: ""              # optional: http://user:pass@host:port
