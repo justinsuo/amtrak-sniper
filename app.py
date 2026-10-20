@@ -63,10 +63,38 @@ def query(sql: str, args: tuple = ()) -> list[sqlite3.Row]:
 def poller_pid() -> int | None:
     try:
         pid = int(PIDFILE.read_text().strip())
-        os.kill(pid, 0)
-        return pid
     except Exception:
         return None
+    if os.name == "nt":  # os.kill(pid, 0) is unreliable on Windows
+        r = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"],
+                           capture_output=True, text=True)
+        return pid if str(pid) in r.stdout else None
+    try:
+        os.kill(pid, 0)
+        return pid
+    except OSError:
+        return None
+
+
+def warmup_status() -> dict:
+    """What the new user needs to know after clicking 'Run warmup'."""
+    cookies = ROOT / "data" / "cookies.json"
+    result = ROOT / "data" / "warmup_result.json"
+    samples = list((ROOT / "data" / "samples").glob("*.json")) if (ROOT / "data" / "samples").is_dir() else []
+    out = {"cookies": 0, "sample": bool(samples), "result": None}
+    if cookies.exists():
+        import json
+        try:
+            out["cookies"] = len(json.loads(cookies.read_text()))
+        except ValueError:
+            pass
+    if result.exists():
+        import json
+        try:
+            out["result"] = json.loads(result.read_text()).get("status")
+        except ValueError:
+            pass
+    return out
 
 
 # ----------------------------------------------------------------------- pages
@@ -113,6 +141,18 @@ DASH = """
   <div class="big {{ 'ok' if running else 'dim' }}">{{ 'running' if running else 'stopped' }}</div>
   <div class="dim">route {{ cfg.route.from_code if cfg.route else '?' }} → {{ cfg.route.to_code if cfg.route else '?' }}</div></div>
 </div>
+
+<h2>Setup checklist</h2>
+<div class="card"><table>
+<tr><td>{{ '✅' if steps.config else '⬜' }}</td><td>Configure route, dates &amp; bid</td>
+<td class="dim">{% if steps.config %}saved{% else %}<a href="{{ url_for('setup') }}">open Setup</a>{% endif %}</td></tr>
+<tr><td>{{ '✅' if steps.warmup else '⬜' }}</td><td>Run warmup browser once</td>
+<td class="dim">{% if steps.warmup %}{{ ws.cookies }} cookies imported{% if ws.sample %}, parser validated on real response{% endif %}{% else %}button below — log into Amtrak in the window that opens{% endif %}</td></tr>
+<tr><td>{{ '✅' if steps.first_poll else '⬜' }}</td><td>First successful poll</td>
+<td class="dim">{% if steps.first_poll %}fares flowing{% elif streak >= 3 %}Akamai is blocking this network — re-warm, or set a proxy in Setup{% else %}starts after warmup{% endif %}</td></tr>
+<tr><td>{{ '✅' if running else '⬜' }}</td><td>Monitor running</td>
+<td class="dim">{{ 'every ~15 min' if running else 'button below' }}</td></tr>
+</table></div>
 
 <h2>Controls</h2>
 <div class="card"><div class="row">
@@ -202,9 +242,15 @@ def dashboard():
         req_today = int(r[0]["value"]) if r else 0
         r = query("SELECT value FROM meta WHERE key='challenge_streak'")
         streak = int(r[0]["value"]) if r else 0
+    steps = {
+        "config": CONFIG.exists(),
+        "warmup": warmup_status()["cookies"] > 0,
+        "first_poll": bool(query("SELECT 1 FROM polls WHERE ok=1 LIMIT 1")),
+    }
     return render(DASH, cfg=cfg, prices=prices, polls=polls, alerts=alerts,
                   lowest=lowest, req_today=req_today, streak=streak,
-                  running=poller_pid() is not None)
+                  running=poller_pid() is not None, steps=steps,
+                  ws=warmup_status())
 
 
 @app.route("/setup", methods=["GET", "POST"])

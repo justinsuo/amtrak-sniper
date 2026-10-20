@@ -70,23 +70,26 @@ async def poll_once(client: httpx.AsyncClient, cfg: dict, st: state.State) -> bo
             await sleep_until_midnight()
         try:
             quotes = await api.fetch_fares(client, cfg, travel_date)
-        except api.ChallengeError as e:
+        except (api.ChallengeError, httpx.HTTPError) as e:
+            # edge 403/429 AND raw network failures (reset/tarpit/timeout)
+            # all count as challenges — never crash the loop on them
+            status = getattr(e, "status", None)
             streak = st.bump_challenge()
-            st.record_poll(travel_date, False, e.status, None, None, str(e))
-            log_incident("challenge", f"{e} streak={streak}")
+            st.record_poll(travel_date, False, status, None, None, repr(e))
+            log_incident("challenge", f"{e!r} streak={streak}")
             st.bump_requests()
             if streak >= CIRCUIT_BREAK_AFTER:
                 await notify.send_telegram(
                     cfg, f"🛑 amtrak-sniper: {streak} consecutive challenges "
-                         f"(last: HTTP {e.status} {e.reference}). Polling halted. "
-                         f"Re-warm the session (tools/warmup_capture.py), then restart.")
+                         f"(last: {e!r}). Polling halted. "
+                         f"Re-warm the session (tools/auto_warmup.py), then restart.")
                 return False
             wait = min(BACKOFF_CAP_S, BACKOFF_BASE_S * (2 ** (streak - 1)))
             print(f"[poller] challenge #{streak}, backing off {wait}s")
             await asyncio.sleep(wait)
             try:
                 await api.warmup(client)  # re-prime cookies before next attempt
-            except api.ChallengeError:
+            except (api.ChallengeError, httpx.HTTPError):
                 pass
             return True  # next cycle retries
         except api.SchemaDriftError as e:
@@ -146,15 +149,15 @@ async def run(config_path: str = "config.yaml") -> None:
             await api.warmup(client)
             warmed = True
             print(f"[poller] warmup ok ({n} cookies imported)")
-        except api.ChallengeError as e:
-            log_incident("warmup_block", str(e))
-            print(f"[poller] warmup blocked ({e}); will retry in loop")
+        except (api.ChallengeError, httpx.HTTPError) as e:
+            log_incident("warmup_block", repr(e))
+            print(f"[poller] warmup blocked ({e!r}); will retry in loop")
         while True:
             if not warmed:
                 try:
                     await api.warmup(client)
                     warmed = True
-                except api.ChallengeError:
+                except (api.ChallengeError, httpx.HTTPError):
                     await asyncio.sleep(BACKOFF_BASE_S)
                     continue
             keep_going = await poll_once(client, cfg, st)
