@@ -1,20 +1,48 @@
-"""Telegram alerts + the solve_captcha interface hook (no OCR solver in v1)."""
+"""Alert delivery + the solve_captcha interface hook (no OCR solver in v1).
+
+Every alert is ALWAYS recorded to the local SQLite alerts table (shown in the
+web UI), so Telegram is strictly optional. If notify.bot_token + chat_id are
+configured, the alert is also pushed to Telegram.
+"""
 
 from __future__ import annotations
 
+import sqlite3
+from datetime import datetime
+from pathlib import Path
 from typing import Protocol
 
 import httpx
 
 TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
+ALERT_DB = Path("data/prices.db")  # relative to the project working dir
+
+
+def record_alert(text: str, db_path: Path = ALERT_DB) -> None:
+    """Append the alert to the UI feed. Never raises — alerting must not
+    crash the poller."""
+    try:
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(db_path)
+        conn.execute("CREATE TABLE IF NOT EXISTS alerts_feed ("
+                     "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                     "ts TEXT NOT NULL, text TEXT NOT NULL)")
+        conn.execute("INSERT INTO alerts_feed (ts, text) VALUES (?, ?)",
+                     (datetime.now().isoformat(timespec="seconds"), text))
+        conn.commit()
+        conn.close()
+    except sqlite3.Error:
+        pass
 
 
 async def send_telegram(cfg: dict, text: str) -> bool:
-    """Outbound-only Bot API call. Needs notify.bot_token AND notify.chat_id.
+    """Record locally, then push to Telegram if configured.
 
-    Get a token from @BotFather, then send the bot any message and read your
-    chat id from https://api.telegram.org/bot<token>/getUpdates.
+    One bot can serve many people: each user presses Start on the bot and
+    puts THEIR chat_id in config. Share the token privately, never via git —
+    whoever holds it controls the bot (revoke anytime via @BotFather /revoke).
     """
+    record_alert(text)
     n = cfg.get("notify", {})
     token, chat_id = n.get("bot_token", ""), n.get("chat_id", "")
     if not token or not chat_id or "FILL_IN" in (token + chat_id):

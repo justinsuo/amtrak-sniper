@@ -125,6 +125,12 @@ DASH = """
 </div><p class="dim">Warmup opens a real browser once (log into Amtrak there — your account,
 your saved card; the bot never sees card numbers). Then start the monitor.</p></div>
 
+<h2>Alerts</h2>
+<div class="card"><table><tr><th>Time</th><th>Alert</th></tr>
+{% for a in alerts %}<tr><td class="dim" style="white-space:nowrap">{{ a.ts[5:16] }}</td><td>{{ a.text }}</td></tr>
+{% else %}<tr><td colspan="2" class="dim">No alerts yet. Alerts appear here even without Telegram configured.</td></tr>
+{% endfor %}</table></div>
+
 <h2>Latest fares</h2>
 <div class="card"><table><tr><th>Seen</th><th>Date</th><th>Train</th><th>Departs</th><th>Class</th><th>Price</th><th>Seats</th></tr>
 {% for r in prices %}<tr><td class="dim">{{ r.ts[5:16] }}</td><td>{{ r.travel_date }}</td>
@@ -154,10 +160,10 @@ SETUP = """
 <div class="row"><div><label>Max price (USD)</label><input name="max_price_usd" value="{{ cfg.max_price_usd }}"></div>
 <div><label>Poll median (seconds)</label><input name="poll_median_seconds" value="{{ cfg.poll_median_seconds or 180 }}"></div>
 <div><label>Daily request cap</label><input name="daily_request_cap" value="{{ cfg.daily_request_cap or 400 }}"></div></div>
-<label>Telegram bot token (from @BotFather)</label>
-<input name="bot_token" value="{{ cfg.notify.bot_token if cfg.notify else '' }}" placeholder="123456:ABC…">
-<label>Telegram chat id</label>
-<input name="chat_id" value="{{ cfg.notify.chat_id if cfg.notify else '' }}">
+<label>Telegram bot token <b>optional</b> — alerts also show on this dashboard</label>
+<input name="bot_token" value="{{ cfg.notify.bot_token if cfg.notify else '' }}" placeholder="leave empty for UI-only alerts">
+<label>Telegram chat id (optional)</label>
+<input name="chat_id" value="{{ cfg.notify.chat_id if cfg.notify else '' }}" placeholder="your chat id, or the shared bot owner's">
 <label>Proxy (optional, e.g. http://user:pass@host:port)</label>
 <input name="proxy" value="{{ cfg.proxy or '' }}">
 <p style="margin-top:16px"><button type="submit">Save config.yaml</button>
@@ -183,6 +189,10 @@ def dashboard():
     cfg = load_cfg()
     prices = query("SELECT * FROM prices ORDER BY id DESC LIMIT 50")
     polls = query("SELECT * FROM polls ORDER BY id DESC LIMIT 15")
+    try:
+        alerts = query("SELECT * FROM alerts_feed ORDER BY id DESC LIMIT 20")
+    except sqlite3.OperationalError:
+        alerts = []
     lowest = query("SELECT MIN(price_cents) m FROM prices")[0]["m"] if DB.exists() else None
     req_today = 0
     streak = 0
@@ -192,8 +202,9 @@ def dashboard():
         req_today = int(r[0]["value"]) if r else 0
         r = query("SELECT value FROM meta WHERE key='challenge_streak'")
         streak = int(r[0]["value"]) if r else 0
-    return render(DASH, cfg=cfg, prices=prices, polls=polls, lowest=lowest,
-                  req_today=req_today, streak=streak, running=poller_pid() is not None)
+    return render(DASH, cfg=cfg, prices=prices, polls=polls, alerts=alerts,
+                  lowest=lowest, req_today=req_today, streak=streak,
+                  running=poller_pid() is not None)
 
 
 @app.route("/setup", methods=["GET", "POST"])

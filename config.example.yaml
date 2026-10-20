@@ -9,7 +9,12 @@ jitter_fraction: 0.3
 daily_request_cap: 400
 notify:
   channel: telegram
-  bot_token: ""   # from @BotFather (/newbot)
-  chat_id: ""     # your numeric chat id — press Start on your bot, then see README §3
+  # OPTIONAL — alerts always appear in the web UI. Telegram adds phone push.
+  # You can use a bot someone else owns: press Start on THEIR bot, put YOUR
+  # chat id here, and have them share the token with you PRIVATELY (never via
+  # git — whoever holds a bot token controls that bot).
+  bot_token: ""   # from @BotFather (/newbot), or a shared bot's token
+  chat_id: ""     # your numeric chat id — press Start on the bot first, then
+                  # read chat.id from https://api.telegram.org/bot<TOKEN>/getUpdates
 auto_checkout: false   # keep false; enable only after weeks of clean monitoring
 proxy: ""              # optional: http://user:pass@host:port

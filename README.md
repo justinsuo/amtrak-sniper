@@ -1,9 +1,10 @@
 # 🚄 amtrak-sniper
 
-Watches Amtrak fares for your route and dates, and pings your Telegram the
-moment a fare drops to your bid price. Optional auto-checkout walks the
-purchase to the payment step, where **you** confirm 3DS — the bot never sees
-your card. Pure Python, no AI, runs on your own machine.
+Watches Amtrak fares for your route and dates, and alerts you — in the web
+UI, plus Telegram if you want phone push — the moment a fare drops to your
+bid price. Optional auto-checkout walks the purchase to the payment step,
+where **you** confirm 3DS — the bot never sees your card. Pure Python, no AI,
+runs on your own machine.
 
 ```
 You set one number (max price) → the bot does everything else.
@@ -41,14 +42,21 @@ Why this matters: Amtrak sits behind Akamai. A warm, human-looking session is
 the difference between clean JSON and a wall of 403s. If your IP is heavily
 blocked, set `proxy` in Setup to a residential proxy.
 
-## 3 · Telegram alerts (2 minutes)
+## 3 · Alerts: nothing to set up (Telegram optional)
 
-1. In Telegram, message **@BotFather** → `/newbot` → follow the prompts → copy
-   the token.
-2. Open your new bot and press **Start** (required so it can message you).
-3. Get your chat id: visit
-   `https://api.telegram.org/bot<TOKEN>/getUpdates` and copy `chat.id`.
-4. Paste both into the UI **Setup** page.
+Every alert — fare hits, circuit-breaker halts, parser warnings — appears in
+the web UI **Alerts** feed automatically. No account, no app, nothing.
+
+Want push notifications on your phone too? Two ways:
+
+- **Your own bot (2 min):** message **@BotFather** → `/newbot` → copy the
+  token; press **Start** on your new bot; read your chat id from
+  `https://api.telegram.org/bot<TOKEN>/getUpdates`; paste both into Setup.
+- **A shared bot (30 s):** one bot can alert many people. Press **Start** on
+  the shared bot, put *your* chat id in Setup, and have the owner send you
+  the bot token **privately** — never commit it to git. Whoever holds a bot
+  token controls that bot (the owner can revoke it anytime via
+  @BotFather → `/revoke`).
 
 ## 4 · Set your bid & start
 
