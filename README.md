@@ -2,9 +2,9 @@
 
 Watches Amtrak fares for your route and dates, and alerts you — in the web
 UI, plus Telegram if you want phone push — the moment a fare drops to your
-bid price. Optional auto-checkout walks the purchase to the payment step,
-where **you** confirm 3DS — the bot never sees your card. Pure Python, no AI,
-runs on your own machine.
+bid price. Turn on **auto-buy** and it completes the purchase with the card
+saved in your Amtrak account — pausing only for your bank's 3DS approval.
+Your card never lives in this app. Pure Python, no AI, on your own machine.
 
 ```
 You set one number (max price) → the bot does everything else.
@@ -63,6 +63,9 @@ Want push notifications on your phone too? Two ways:
 In **Setup**: route (station codes), travel dates, max price. Save, then click
 **“2 · Start monitor”**. That's it — fares land in your Telegram.
 
+Want it to **buy**, not just alert? Tick **Auto-buy** in Setup. First click the
+dashboard's **dry-run** button to watch it walk the flow without paying.
+
 ## How it works
 
 - **JSON, not DOM.** The poller calls Amtrak's internal fare-search endpoint
@@ -73,8 +76,13 @@ In **Setup**: route (station codes), travel dates, max price. Save, then click
   breaker that halts polling and alerts you instead of hammering.
 - **Schema-tolerant parser:** if Amtrak changes the response shape, the bot
   dumps the raw payload and alerts you instead of misparsing a price.
-- **Human at the money step:** `auto_checkout` stays `false` until you've run
-  weeks of clean monitoring. Even then, checkout stops at 3DS for you.
+- **Auto-buy, fail-safe:** on a fare hit it drives the real UI — search →
+  pick train → cart → payment — selects the card **saved in your Amtrak
+  account**, re-verifies the total is still ≤ your bid before paying, buys
+  once per train/date (ledger in SQLite), and pauses for your bank's 3DS
+  approval. Any unexpected page → screenshot + alert + browser left open for
+  you. Prove it safely first with the dashboard's **dry-run** button (goes to
+  the payment page, never clicks pay).
 
 ## Repo map
 
@@ -86,7 +94,7 @@ sniper/
   api.py               # fare endpoint client + tolerant parser
   state.py             # SQLite: price history, caps, alert dedup
   notify.py            # Telegram + solve_captcha hook (no OCR solver)
-  checkout.py          # Phase 2 skeleton, stops at 3DS
+  checkout.py          # auto-buy flow: saved card, price re-verify, 3DS pause
 tools/
   auto_warmup.py       # hands-free warmup + response capture
   warmup_capture.py    # manual variant (drive the search yourself)

@@ -165,6 +165,21 @@ DASH = """
 </div><p class="dim">Warmup opens a real browser once (log into Amtrak there — your account,
 your saved card; the bot never sees card numbers). Then start the monitor.</p></div>
 
+<h2>Auto-buy</h2>
+<div class="card"><div class="row">
+ <div><span class="dim">Status:</span>
+  {% if cfg.auto_checkout %}<span class="ok">ON</span> — buys at ≤ ${{ '%.2f'|format(cfg.max_price_usd or 0) }} with your saved Amtrak card, stops for bank 3DS
+  {% else %}<span class="dim">OFF</span> — alerts only; enable in <a href="{{ url_for('setup') }}">Setup</a>{% endif %}</div>
+ <div><form method="post" action="{{ url_for('checkout_test') }}"><button class="secondary">Test checkout flow (dry run — never pays)</button></form></div>
+</div>
+{% if co %}<p class="dim">Last checkout run: {{ co.ts[5:16] if co.ts else '' }} — <b>{{ co.status }}</b>{% if co.reason %} ({{ co.reason }}){% endif %}{% if co.pnr %} · PNR <b>{{ co.pnr }}</b>{% endif %}</p>{% endif %}
+{% if purchases %}
+<table><tr><th>Time</th><th>Date</th><th>Train</th><th>Price</th><th>PNR</th><th>Status</th></tr>
+{% for p in purchases %}<tr><td class="dim">{{ p.ts[5:16] }}</td><td>{{ p.travel_date }}</td><td>{{ p.train_number }}</td>
+<td>{{ ('$%.2f'|format(p.price_cents/100)) if p.price_cents else '' }}</td><td>{{ p.pnr or '—' }}</td>
+<td class="{{ 'ok' if p.status == 'confirmed' else 'warn' }}">{{ p.status }}</td></tr>{% endfor %}</table>
+{% endif %}</div>
+
 <h2>Alerts</h2>
 <div class="card"><table><tr><th>Time</th><th>Alert</th></tr>
 {% for a in alerts %}<tr><td class="dim" style="white-space:nowrap">{{ a.ts[5:16] }}</td><td>{{ a.text }}</td></tr>
@@ -206,6 +221,8 @@ SETUP = """
 <input name="chat_id" value="{{ cfg.notify.chat_id if cfg.notify else '' }}" placeholder="your chat id, or the shared bot owner's">
 <label>Proxy (optional, e.g. http://user:pass@host:port)</label>
 <input name="proxy" value="{{ cfg.proxy or '' }}">
+<label style="margin-top:14px"><input type="checkbox" name="auto_checkout" style="width:auto" {% if cfg.auto_checkout %}checked{% endif %}>
+<b>Auto-buy</b> when a fare ≤ bid is found (uses the saved card in your Amtrak account; stops for bank 3DS approval)</label>
 <p style="margin-top:16px"><button type="submit">Save config.yaml</button>
 <a class="btn secondary" href="{{ url_for('dashboard') }}">Cancel</a></p>
 <p class="dim">Secrets stay in <code>config.yaml</code> on this machine — it's git-ignored and never uploaded.</p>
@@ -247,10 +264,22 @@ def dashboard():
         "warmup": warmup_status()["cookies"] > 0,
         "first_poll": bool(query("SELECT 1 FROM polls WHERE ok=1 LIMIT 1")),
     }
+    try:
+        purchases = query("SELECT * FROM purchases ORDER BY id DESC LIMIT 10")
+    except sqlite3.OperationalError:
+        purchases = []
+    co = None
+    co_file = ROOT / "data" / "checkout_state.json"
+    if co_file.exists():
+        import json
+        try:
+            co = json.loads(co_file.read_text(encoding="utf-8"))
+        except ValueError:
+            pass
     return render(DASH, cfg=cfg, prices=prices, polls=polls, alerts=alerts,
                   lowest=lowest, req_today=req_today, streak=streak,
                   running=poller_pid() is not None, steps=steps,
-                  ws=warmup_status())
+                  ws=warmup_status(), purchases=purchases, co=co)
 
 
 @app.route("/setup", methods=["GET", "POST"])
@@ -271,7 +300,7 @@ def setup():
                          "bot_token": f["bot_token"].strip(),
                          "chat_id": f["chat_id"].strip()}
         cfg["proxy"] = f["proxy"].strip()
-        cfg.setdefault("auto_checkout", False)
+        cfg["auto_checkout"] = f.get("auto_checkout") == "on"
         save_cfg(cfg)
         return redirect(url_for("dashboard"))
     return render(SETUP, cfg=cfg)
@@ -293,6 +322,13 @@ def incidents():
 @app.route("/control/warmup", methods=["POST"])
 def warmup():
     subprocess.Popen([sys.executable, str(ROOT / "tools" / "auto_warmup.py")],
+                     cwd=ROOT, creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0))
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/control/checkout_test", methods=["POST"])
+def checkout_test():
+    subprocess.Popen([sys.executable, "-m", "sniper.checkout", "--dry-run"],
                      cwd=ROOT, creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0))
     return redirect(url_for("dashboard"))
 

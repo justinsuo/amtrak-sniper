@@ -35,6 +35,15 @@ CREATE TABLE IF NOT EXISTS prices (
 CREATE INDEX IF NOT EXISTS idx_prices_lookup
     ON prices (travel_date, train_number, fare_class, ts);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS purchases (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT NOT NULL,
+    travel_date TEXT NOT NULL,
+    train_number TEXT NOT NULL,
+    price_cents INTEGER,
+    pnr TEXT,
+    status TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS alerts (
     key TEXT PRIMARY KEY,          -- travel_date|train|class
     last_price_cents INTEGER NOT NULL,
@@ -47,6 +56,7 @@ class State:
     def __init__(self, db_path: str = "data/prices.db"):
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(db_path)
+        self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA)
 
     # ---- counters (meta) ----
@@ -95,7 +105,28 @@ class State:
               q.price_cents, q.seats_available) for q in quotes])
         self.conn.commit()
 
-    # ---- alert dedup: re-alert only on new train/class or a further drop ----
+    # ---- purchases ledger ----
+    def already_purchased(self, travel_date: str, train_number: str) -> bool:
+        row = self.conn.execute(
+            "SELECT 1 FROM purchases WHERE travel_date=? AND train_number=? "
+            "AND status='confirmed' LIMIT 1", (travel_date, train_number)).fetchone()
+        return row is not None
+
+    def record_purchase(self, travel_date, train_number, price_cents, pnr, status) -> None:
+        self.conn.execute(
+            "INSERT INTO purchases (ts, travel_date, train_number, price_cents,"
+            " pnr, status) VALUES (?,?,?,?,?,?)",
+            (datetime.now().isoformat(timespec="seconds"), travel_date,
+             train_number, price_cents, pnr, status))
+        self.conn.commit()
+
+    def latest_quotes(self, limit: int = 5):
+        """Cheapest quote per (date, train) from the most recent poll day."""
+        return self.conn.execute(
+            "SELECT p.* FROM prices p JOIN ("
+            "  SELECT travel_date, train_number, MAX(id) mid FROM prices"
+            "  GROUP BY travel_date, train_number) t ON p.id = t.mid"
+            " ORDER BY p.price_cents ASC LIMIT ?", (limit,)).fetchall()
     def should_alert(self, q: "FareQuote") -> bool:
         key = f"{q.travel_date}|{q.train_number}|{q.fare_class}"
         row = self.conn.execute("SELECT last_price_cents FROM alerts WHERE key=?",
