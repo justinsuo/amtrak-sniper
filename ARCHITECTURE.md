@@ -48,6 +48,13 @@ The owner accepts that automating purchases on amtrak.com may violate Amtrak's T
 
 ## Phase gates
 
-- **Phase 0 (recon)** — `docs/endpoints.md`. Request schema captured; one 200-response capture pending (needs a warm session).
-- **Phase 1 (monitor MVP)** — `auto_checkout: false`. Poll → record → alert. Written only after the response schema is pinned.
-- **Phase 2 (auto-checkout)** — gated on ≥ 2 weeks of clean Phase 1 operation and a logged-in-session recon of the cart/checkout endpoints. `auto_checkout` flips to `true` only then.
+- **Phase 0 (recon)** — `docs/endpoints.md`. Request schema captured live;
+  response handled by a schema-tolerant parser with fail-loud raw dumps.
+- **Phase 1 (monitor)** — poll → record → alert (web UI feed, Telegram optional).
+- **Phase 2 (auto-buy, shipped)** — on a hit, Playwright drives the real UI to
+  payment with the saved card in the user's Amtrak account. Guards: station
+  codes verified before searching, no train-number guessing, price re-verified
+  at payment (abort on reprice), once-per-train/date ledger (unknown outcomes
+  block retries), bank 3DS pauses for human approval, and every failure leaves
+  a screenshot plus an open browser for human takeover. A dashboard dry-run
+  walks the same flow without ever clicking pay.

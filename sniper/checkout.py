@@ -89,6 +89,14 @@ async def _search(page, from_code: str, to_code: str, travel_date: str) -> None:
 
     await pick("From", from_code)
     await pick("To", to_code)
+    # GUARD: after selection the widget's inputs hold the station CODES.
+    # Never submit a search for the wrong city (would buy the wrong ticket).
+    values = await page.evaluate(
+        "() => [...document.querySelectorAll('input')]"
+        ".filter(i => i.offsetParent).map(i => i.value)")
+    if from_code not in values or to_code not in values:
+        raise RuntimeError(f"station selection mismatch {values} — expected "
+                           f"{from_code}/{to_code}; human, verify the route")
     for_attr = await page.locator("label:has-text('Depart Date')").first.get_attribute("for")
     date_box = page.locator(f"#{for_attr}")
     await date_box.click(force=True)
@@ -108,6 +116,8 @@ def _money(text: str) -> Optional[int]:
 
 async def _select_train(page, quote: "FareQuote", bid_cents: int) -> int:
     """Click the matching train card on the results page; return live price."""
+    if not quote.train_number:
+        raise RuntimeError("quote has no train number — refusing to guess a train")
     await page.wait_for_timeout(4000)
     # prefer the exact train number from the quote
     loc = page.locator(f"text=/{quote.train_number}/").first
@@ -142,8 +152,18 @@ async def _advance(page) -> bool:
 
 
 async def _at_payment(page) -> bool:
+    """Conservative payment-page detection: require a card input or explicit
+    payment/billing section text — not just the word 'payment' in a footer."""
+    try:
+        for sel in ["input[name*='card' i]", "input[id*='card' i]",
+                    "input[autocomplete='cc-number']"]:
+            if await page.locator(sel).count():
+                return True
+    except Exception:
+        pass
     html = (await page.content()).lower()
-    return bool(CARD_FIELD.search(html)) or "payment" in html
+    return ("payment method" in html or "card number" in html
+            or "billing information" in html or "cvv" in html)
 
 
 async def _pick_saved_card(page) -> bool:

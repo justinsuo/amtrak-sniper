@@ -93,6 +93,7 @@ async def poll_once(client: httpx.AsyncClient, cfg: dict, st: state.State) -> bo
                 pass
             return True  # next cycle retries
         except api.SchemaDriftError as e:
+            st.bump_requests()  # it was a real (200) request — count it
             st.record_poll(travel_date, False, 200, None, None, str(e))
             log_incident("schema_drift", str(e))
             await notify.send_telegram(

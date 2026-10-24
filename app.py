@@ -207,6 +207,7 @@ your saved card; the bot never sees card numbers). Then start the monitor.</p></
 
 SETUP = """
 <div class="card"><form method="post">
+{% if err %}<p class="bad">{{ err }}</p>{% endif %}
 <div class="row"><div><label>From (station code)</label><input name="from_code" value="{{ cfg.route.from_code if cfg.route else '' }}"></div>
 <div><label>To (station code)</label><input name="to_code" value="{{ cfg.route.to_code if cfg.route else '' }}"></div>
 <div><label>Seat class</label><input name="seat_class" value="{{ cfg.seat_class or 'coach' }}"></div></div>
@@ -287,13 +288,22 @@ def setup():
     cfg = load_cfg()
     if request.method == "POST":
         f = request.form
+        try:
+            from datetime import datetime as _dt
+            dates = [d.strip() for d in f["dates"].split(",") if d.strip()]
+            for d in dates:
+                _dt.strptime(d, "%Y-%m-%d")
+            cfg["max_price_usd"] = float(f["max_price_usd"])
+            cfg["poll_median_seconds"] = int(f["poll_median_seconds"])
+            cfg["daily_request_cap"] = int(f["daily_request_cap"])
+        except ValueError as e:
+            return render(SETUP, cfg=cfg,
+                          err=f"Check your input: {e}. Dates must be YYYY-MM-DD, "
+                              f"price/intervals must be numbers.")
         cfg["route"] = {"from_code": f["from_code"].strip().upper(),
                         "to_code": f["to_code"].strip().upper()}
-        cfg["dates"] = [d.strip() for d in f["dates"].split(",") if d.strip()]
+        cfg["dates"] = dates
         cfg["seat_class"] = f["seat_class"].strip() or "coach"
-        cfg["max_price_usd"] = float(f["max_price_usd"])
-        cfg["poll_median_seconds"] = int(f["poll_median_seconds"])
-        cfg["daily_request_cap"] = int(f["daily_request_cap"])
         cfg.setdefault("min_seats_available", 1)
         cfg.setdefault("jitter_fraction", 0.3)
         cfg["notify"] = {"channel": "telegram",

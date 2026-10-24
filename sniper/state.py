@@ -107,9 +107,10 @@ class State:
 
     # ---- purchases ledger ----
     def already_purchased(self, travel_date: str, train_number: str) -> bool:
+        # 'unknown' also counts: a retry must never risk a duplicate purchase
         row = self.conn.execute(
             "SELECT 1 FROM purchases WHERE travel_date=? AND train_number=? "
-            "AND status='confirmed' LIMIT 1", (travel_date, train_number)).fetchone()
+            "AND status != 'error' LIMIT 1", (travel_date, train_number)).fetchone()
         return row is not None
 
     def record_purchase(self, travel_date, train_number, price_cents, pnr, status) -> None:
